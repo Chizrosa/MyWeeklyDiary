@@ -9,7 +9,7 @@ __pycache__/
 # 個人の日記データ（自分の日記をアップロードしないためのブロック）
 test_diaries/
 diaries/
-*.json  # ← これを追加（weekly_memory.json や memory_db.json をブロック）
+*.json
 
 # OSが勝手に作る隠しファイル (Windows / Mac)
 Thumbs.db

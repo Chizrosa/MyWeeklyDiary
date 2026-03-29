@@ -174,24 +174,29 @@ def get_weather(target_date):
     except Exception as e:
         return f"天気データ取得失敗 ({e})"
     
-MEMORY_FILE = pathlib.Path("./weekly_memory.json")
+MEMORY_FILE = pathlib.Path("./memory_db.json")
 
-def load_weekly_memory():
-    """今週の記憶を読み込む（なければ空の枠を作る）"""
+def load_memory():
+    """過去の記憶をすべて読み込む"""
     if MEMORY_FILE.exists():
         with open(MEMORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"月": "", "火": "", "水": "", "木": "", "金": "", "土": "", "日": ""}
+    return {}
 
-def save_weekly_memory(memory_data):
+def save_memory(memory_data):
     """記憶をJSONに保存する"""
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory_data, f, ensure_ascii=False, indent=2)
 
-def clear_weekly_memory():
-    """日曜日が終わったら記憶をリセットする"""
-    if MEMORY_FILE.exists():
-        MEMORY_FILE.unlink()
+def update_oneline_md(memory_data):
+    """Obsidianで読める「1行日記まとめ.md」を自動更新する"""
+    content = "# 📅 1行日記まとめ\n\n"
+    for d in sorted(memory_data.keys()):
+        content += f"- **{d}**: {memory_data[d]}\n"
+    
+    oneline_path = SAVE_DIR / "1行日記まとめ.md"
+    with open(oneline_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 # --- 2. 画面構成 ---
 st.set_page_config(page_title="My Auto Diary", page_icon="🌙", layout="centered")
@@ -241,10 +246,15 @@ with tab1:
                     perfect_date = f"{target_date.year}年{target_date.month}月{target_date.day}日（{weekday_str}曜日）"
                     
                     # ▼▼ 記憶の読み込みを追加 ▼▼
-                    weekly_memory = load_weekly_memory()
-                    memory_text = "\n".join([f"{k}曜: {v}" for k, v in weekly_memory.items() if v])
+                    memory_db = load_memory()
+                    sorted_dates = sorted(memory_db.keys())
+                    last_7_dates = sorted_dates[-7:] # 直近7日分を取得
+                    
+                    memory_lines = [f"{d}: {memory_db[d]}" for d in last_7_dates]
+                    memory_text = "\n".join(memory_lines)
+                    
                     if not memory_text.strip():
-                        memory_text = "今週の記録はまだありません。"
+                        memory_text = "過去の記録はまだありません。"
                     
                     full_prompt = instruction.format(
                         target_date=perfect_date,
@@ -252,7 +262,7 @@ with tab1:
                         aw_data=edited_logs,
                         dc_data=dc_data,
                         memo=memo,
-                        weekly_memory=memory_text  # ← ここを追加！
+                        weekly_memory=memory_text  # ← プロンプトに合わせて変数はそのまま
                     )
 
                     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -271,8 +281,11 @@ with tab1:
                         contents=summary_prompt
                     )
                     
-                    weekly_memory[weekday_str] = summary_response.text.strip()
-                    save_weekly_memory(weekly_memory)
+                    # 曜日ではなく、日付（YYYY-MM-DD）をキーにして保存
+                    date_key = target_date.isoformat()
+                    memory_db[date_key] = summary_response.text.strip()
+                    save_memory(memory_db)
+                    update_oneline_md(memory_db) # ★ここでObsidian用のまとめMDも更新！
                     # ▲▲ ここまで追加 ▲▲
 
                 except Exception as e:
@@ -292,10 +305,15 @@ with tab1:
             ui_parts.cat_run()
 
             if target_date.weekday() == 6: # 6 = 日曜日
-                with st.spinner("日曜日のため、1週間のまとめを生成中..."):
+                with st.spinner("日曜日のため、直近7日間のまとめを生成中..."):
                     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-                    weekly_data = load_weekly_memory()
-                    memory_text = "\n".join([f"{k}曜: {v}" for k, v in weekly_data.items() if v])
+                    
+                    # 直近7日分だけを取得してまとめる
+                    memory_db = load_memory()
+                    sorted_dates = sorted(memory_db.keys())
+                    last_7_dates = sorted_dates[-7:]
+                    memory_lines = [f"{d}: {memory_db[d]}" for d in last_7_dates]
+                    memory_text = "\n".join(memory_lines)
                     
                     archive_prompt = f"以下の1週間の記録を元に、今週の総括を3行でまとめてください。\n\n{memory_text}"
                     archive_response = client.models.generate_content(
@@ -312,8 +330,7 @@ with tab1:
                     with open(archive_path, "w", encoding="utf-8") as f:
                         f.write(archive_content)
                     
-                    clear_weekly_memory() # 記憶をリセット
-                    st.success(f"🎊 1週間のアーカイブ『{archive_filename}』を保存し、記憶をリセットしました！")
+                    st.success(f"🎊 1週間のアーカイブ『{archive_filename}』を保存しました！（記憶は1行日記に引き継がれます）")
 
 with tab2:
     st.subheader("これまでの記録")
