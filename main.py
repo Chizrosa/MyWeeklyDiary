@@ -2,7 +2,7 @@
 import re
 import os
 import pathlib
-import json  # ← これを追加！
+import json
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 
@@ -27,7 +27,6 @@ def check_env():
         st.stop()
 
     # 2. .envの設定（APIキー）確認
-    import os
     if not os.getenv("GEMINI_API_KEY"):
         st.warning("## ⚠️ APIキーが設定されていません")
         st.info("`.env` ファイルを作成し、`GEMINI_API_KEY` を記入してください。詳細はREADMEを確認してください。")
@@ -36,16 +35,17 @@ def check_env():
 # 起動時に真っ先に実行
 check_env()
 
-# GitHub公開用：デフォルトの保存先をプロジェクト内の "diaries" フォルダに変更
-# 必要に応じて .env で上書きできるようにするとより親切です
+# デフォルトの保存先
 DEFAULT_SAVE_PATH = os.getenv("SAVE_DIR", "./diaries")
 SAVE_DIR = pathlib.Path(DEFAULT_SAVE_PATH)
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-# 使用するAIモデル（一箇所で管理）
-GEMINI_MODEL = "gemini-3.1-flash-lite-preview" 
+# --- 使用するAIモデルの選択 ---
+# GEMINI_MODEL = "gemini-3.1-flash-lite-preview" 
+# GEMINI_MODEL = "gemma-4-31b-it"       # 最も賢い高機能モデル
+GEMINI_MODEL = "gemma-4-26b-a4b-it"  # 高速で効率的なモデル
 
-# 詳細を秘匿したいアプリのカテゴリ設定（秘匿したくない場合はコメントアウト）
+# 詳細を秘匿したいアプリの設定
 SENSITIVE_APPS = {
     "WINWORD.EXE": "執筆作業（原稿）",
     "EXCEL.EXE": "事務作業（資料）",
@@ -67,7 +67,7 @@ def get_logical_date():
 
 def get_aw_summary(target_date):
     """ActivityWatchから活動ログを取得"""
-    tz_name = os.getenv("TIMEZONE", "UTC") # デフォルトをUTCに
+    tz_name = os.getenv("TIMEZONE", "UTC")
     local_tz = ZoneInfo(tz_name)
     try:
         url = "http://localhost:5600/api/0/query/"
@@ -95,7 +95,6 @@ def get_aw_summary(target_date):
 
             for e in events[:20]:
                 app = e['data']['app']
-                # ノイズ除去
                 if app == "unknown" or app in ["explorer.exe", "OptionalFeatures.exe", "steamwebhelper.exe"]:
                     continue
                 if e['duration'] < 60:
@@ -103,12 +102,8 @@ def get_aw_summary(target_date):
     
                 raw_title = e['data']['title']
                 duration = int(e['duration'] / 60)
-                # メールアドレスの秘匿
                 clean_title = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[email hidden]', raw_title)
-
                 local_summary.append(f"・{app}: {clean_title} ({duration}分)")
-    
-                # 匿名化処理
                 safe_title = f"（{SENSITIVE_APPS[app]}）" if app in SENSITIVE_APPS else clean_title
                 ai_summary.append(f"・{app}: {safe_title} ({duration}分)")
 
@@ -157,15 +152,12 @@ def get_weather(target_date):
         city = os.getenv("CITY_NAME", "Tokyo") 
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=ja&format=json"
         geo_res = requests.get(geo_url, timeout=5).json()
-
         if "results" not in geo_res:
             return f"天気エラー: {city} が見つかりません"
-
         lat, lon = geo_res["results"][0]["latitude"], geo_res["results"][0]["longitude"]
         date_str = target_date.isoformat()
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=temperature_2m,weathercode&timezone=auto"
         w_res = requests.get(weather_url, timeout=5).json()
-
         temp_10am = w_res["hourly"]["temperature_2m"][10]
         code_10am = w_res["hourly"]["weathercode"][10]
         weather_map = {0: "快晴", 1: "晴れ", 2: "一部曇り", 3: "曇り", 45: "霧", 61: "雨", 71: "雪", 95: "雷雨"}
@@ -173,27 +165,25 @@ def get_weather(target_date):
         return f"{desc} (気温: {temp_10am}℃)"
     except Exception as e:
         return f"天気データ取得失敗 ({e})"
-    
+
+# --- 記憶管理の関数 ---
 MEMORY_FILE = pathlib.Path("./memory_db.json")
 
 def load_memory():
-    """過去の記憶をすべて読み込む"""
     if MEMORY_FILE.exists():
         with open(MEMORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_memory(memory_data):
-    """記憶をJSONに保存する"""
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory_data, f, ensure_ascii=False, indent=2)
 
 def update_oneline_md(memory_data):
-    """Obsidianで読める「1行日記まとめ.md」を自動更新する"""
+    """Obsidian用「1行日記まとめ.md」の更新"""
     content = "# 📅 1行日記まとめ\n\n"
     for d in sorted(memory_data.keys()):
         content += f"- **{d}**: {memory_data[d]}\n"
-    
     oneline_path = SAVE_DIR / "1行日記まとめ.md"
     with open(oneline_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -226,7 +216,6 @@ with tab1:
     dc_data = st.session_state.get("dc", "（未取得）")
     
     ui_parts.display_status_info(target_date, weather_data, aw_show, dc_data)
-    
     memo = st.text_area("✍️ 付け加えたいこと", placeholder="今日あったことや、AIに伝えたいことを書いてください。", height=150)
 
     if st.session_state.get("is_collected"):
@@ -245,16 +234,12 @@ with tab1:
                     weekday_str = weekdays[target_date.weekday()]
                     perfect_date = f"{target_date.year}年{target_date.month}月{target_date.day}日（{weekday_str}曜日）"
                     
-                    # ▼▼ 記憶の読み込みを追加 ▼▼
+                    # 記憶の読み込み（直近7日分）
                     memory_db = load_memory()
                     sorted_dates = sorted(memory_db.keys())
-                    last_7_dates = sorted_dates[-7:] # 直近7日分を取得
-                    
+                    last_7_dates = sorted_dates[-7:]
                     memory_lines = [f"{d}: {memory_db[d]}" for d in last_7_dates]
-                    memory_text = "\n".join(memory_lines)
-                    
-                    if not memory_text.strip():
-                        memory_text = "過去の記録はまだありません。"
+                    memory_text = "\n".join(memory_lines) if memory_lines else "過去の記録はまだありません。"
                     
                     full_prompt = instruction.format(
                         target_date=perfect_date,
@@ -262,31 +247,36 @@ with tab1:
                         aw_data=edited_logs,
                         dc_data=dc_data,
                         memo=memo,
-                        weekly_memory=memory_text  # ← プロンプトに合わせて変数はそのまま
+                        weekly_memory=memory_text
                     )
 
                     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
                     
-                    # 1. メインの日記生成
+                    # 1. メイン日記の生成
                     response = client.models.generate_content(
                         model=GEMINI_MODEL,
                         contents=full_prompt
                     )
                     st.session_state.result = response.text
 
-                    # ▼▼ 2. 今日のハイライトを1行で抽出して記憶に保存 ▼▼
-                    summary_prompt = f"以下は今日の日記です。明日の自分に引き継ぐべき重要な出来事や体調のステータスを、簡潔に1行（50文字以内）で要約してください。\n\n{response.text}"
+                    # 2. 今日のハイライトを1行で抽出（事実ベースに改善）
+                    summary_prompt = f"""
+以下は今日の日記です。この日の「主要な活動」と「体調や気分の変化」を、
+事実ベースで簡潔に1行（50文字以内）で記録してください。
+※「明日は〜する」という予定よりも、「今日は〜だった」という事実を優先してください。
+※「おなかいたい」等の日常的なつぶやきは、深刻な体調不良ではなく等身大で表現してください。
+
+{response.text}
+"""
                     summary_response = client.models.generate_content(
                         model=GEMINI_MODEL,
                         contents=summary_prompt
                     )
                     
-                    # 曜日ではなく、日付（YYYY-MM-DD）をキーにして保存
                     date_key = target_date.isoformat()
                     memory_db[date_key] = summary_response.text.strip()
                     save_memory(memory_db)
-                    update_oneline_md(memory_db) # ★ここでObsidian用のまとめMDも更新！
-                    # ▲▲ ここまで追加 ▲▲
+                    update_oneline_md(memory_db)
 
                 except Exception as e:
                     st.error(f"エラー: {e}")
@@ -297,18 +287,33 @@ with tab1:
         if st.button("💾 ファイルに保存する"):
             file_name = f"{target_date.isoformat()}.md"
             file_path = SAVE_DIR / file_name
-            content = f"# {target_date}\n\n{st.session_state.result}\n\n---\n### 📊 ログ（詳細）\n{st.session_state.aw_local}\n\n### 💬 Discord\n```text\n{dc_data}\n```"
-        
+            
+            # content構成：日記本文、モデル署名、詳細ログ
+            content = f"""# {target_date}
+
+{st.session_state.result}
+
+---
+### 🤖 使用モデル
+`{GEMINI_MODEL}`
+
+### 📊 ログ（詳細）
+{st.session_state.aw_local}
+
+### 💬 Discord
+```text
+{dc_data}
+```
+"""
+            # ファイル書き込み
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             st.success(f"『{file_name}』を保存しました！")
             ui_parts.cat_run()
 
-            if target_date.weekday() == 6: # 6 = 日曜日
-                with st.spinner("日曜日のため、直近7日間のまとめを生成中..."):
-                    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-                    
-                    # 直近7日分だけを取得してまとめる
+            # 日曜日の週次まとめ
+            if target_date.weekday() == 6:
+                with st.spinner("日曜日のため、1週間の総括を生成中..."):
                     memory_db = load_memory()
                     sorted_dates = sorted(memory_db.keys())
                     last_7_dates = sorted_dates[-7:]
@@ -316,21 +321,15 @@ with tab1:
                     memory_text = "\n".join(memory_lines)
                     
                     archive_prompt = f"以下の1週間の記録を元に、今週の総括を3行でまとめてください。\n\n{memory_text}"
-                    archive_response = client.models.generate_content(
-                        model=GEMINI_MODEL,
-                        contents=archive_prompt
-                    )
+                    archive_response = client.models.generate_content(model=GEMINI_MODEL, contents=archive_prompt)
                     
                     year, week_num, _ = target_date.isocalendar()
                     archive_filename = f"{year}-W{week_num:02d}_Summary.md"
-                    archive_path = SAVE_DIR / archive_filename
+                    archive_content = f"# {year}年 第{week_num}週のまとめ\n\n## AI総括\n{archive_response.text}\n\n## ハイライト\n{memory_text}"
                     
-                    archive_content = f"# {year}年 第{week_num}週のまとめ\n\n## AIによる総括\n{archive_response.text}\n\n## 日々のハイライト\n{memory_text}"
-                    
-                    with open(archive_path, "w", encoding="utf-8") as f:
+                    with open(SAVE_DIR / archive_filename, "w", encoding="utf-8") as f:
                         f.write(archive_content)
-                    
-                    st.success(f"🎊 1週間のアーカイブ『{archive_filename}』を保存しました！（記憶は1行日記に引き継がれます）")
+                    st.success(f"🎊 週次アーカイブを保存しました！")
 
 with tab2:
     st.subheader("これまでの記録")
