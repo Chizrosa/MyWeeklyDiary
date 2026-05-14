@@ -14,3 +14,9 @@ diaries/
 # OSが勝手に作る隠しファイル (Windows / Mac)
 Thumbs.db
 .DS_Store
+
+# Streamlitのローカルシークレット（APIキーなどを書く場合があるため）
+.streamlit/secrets.toml
+
+# 万が一エラーログをファイル出力するようにした時用
+*.log
