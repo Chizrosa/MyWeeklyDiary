@@ -20,10 +20,10 @@ load_dotenv()
 
 # モデルの選択肢を増やす
 MODEL_OPTIONS = [
-    "gemini-1.5-flash", 
-    "gemini-1.5-pro",
-    "local-gemma3:latest", # プレフィックス「local-」で判定
-    "local-llama3:latest"
+    "local-gemma3:latest",      # ローカル (Ollama)
+    "local-llama3.1:latest",      # ローカル (Ollama)
+    "gemini-3.1-flash-lite-preview", # API (Google AI Studio)
+    "gemini-2.5-flash"               # API (Google AI Studio)
 ]
 
 GEMINI_MODEL = st.sidebar.selectbox("🤖 AIモデルを選択", MODEL_OPTIONS)
@@ -63,11 +63,6 @@ check_env()
 DEFAULT_SAVE_PATH = os.getenv("SAVE_DIR", "./diaries")
 SAVE_DIR = pathlib.Path(DEFAULT_SAVE_PATH)
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
-
-# --- 使用するAIモデルの選択 ---
-# GEMINI_MODEL = "gemini-3.1-flash-lite-preview" 
-# GEMINI_MODEL = "gemma-4-31b-it"       # 最も賢い高機能モデル
-GEMINI_MODEL = "gemma-4-26b-a4b-it"  # 高速で効率的なモデル
 
 # 詳細を秘匿したいアプリの設定
 SENSITIVE_APPS = {
@@ -259,6 +254,14 @@ with tab1:
         )
 
         if st.button("🌟 AIに日記を書いてもらう"):
+            # --- ローカルモデル選択時のOllama起動チェック ---
+            if GEMINI_MODEL.startswith("local-"):
+                try:
+                    requests.get("http://localhost:11434/", timeout=1)
+                except requests.exceptions.ConnectionError:
+                    st.warning("⚠️ Ollamaが起きていないみたい。ローカルLLMを使う場合は、Ollamaアプリを立ち上げるか、ターミナルで `ollama serve` を実行してからもう一度試してみてね。")
+                    st.stop()  # エラーを出さずにここで安全に処理を止める
+            # ---------------------------------------------
             with st.spinner("AIが執筆中..."):
                 try:
                     with open(prompt_file, "r", encoding="utf-8") as f:
@@ -294,16 +297,27 @@ with tab1:
                         response = ollama.generate(
                             model=local_model_name,
                             prompt=full_prompt,
-                            options={"temperature": 0.1, "stop": ["---"], "num_predict": 1500}
+                            options={
+                                "temperature": 0.1,
+                                "num_predict": 1500,
+                                "num_ctx": 4096,
+                                "num_gpu": 20
+                            }
                         )
                         st.session_state.result = response["response"]
 
                         # 2. 今日のハイライトを1行で抽出 (ローカル)
-                        summary_prompt = f"以下は今日の日記です。...（中略）...\n\n{st.session_state.result}"
+                        summary_prompt = f"""以下は今日の日記です。この日の「主要な活動」と「体調や気分の変化」を、事実ベースで簡潔に1行（50文字以内）でまとめてください。
+
+{st.session_state.result}"""
                         summary_response = ollama.generate(
                             model=local_model_name,
                             prompt=summary_prompt,
-                            options={"temperature": 0.1, "num_predict": 100}
+                            options={
+                                "temperature": 0.1, 
+                                "num_predict": 100,
+                                "num_ctx": 4096   # ← こっちにも追加
+                            }
                         )
                         summary_text = summary_response["response"].strip()
 
@@ -380,11 +394,28 @@ with tab1:
                     memory_text = "\n".join(memory_lines)
                     
                     archive_prompt = f"以下の1週間の記録を元に、今週の総括を3行でまとめてください。\n\n{memory_text}"
-                    archive_response = client.models.generate_content(model=GEMINI_MODEL, contents=archive_prompt)
+                    
+                    # --- モデルに応じて処理を分岐 ---
+                    if GEMINI_MODEL.startswith("local-"):
+                        import ollama
+                        local_model_name = GEMINI_MODEL.replace("local-", "")
+                        archive_response_raw = ollama.generate(
+                            model=local_model_name,
+                            prompt=archive_prompt,
+                            options={"temperature": 0.2, "num_predict": 300}
+                        )
+                        archive_text = archive_response_raw["response"]
+                    else:
+                        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+                        archive_response = client.models.generate_content(
+                            model=GEMINI_MODEL, 
+                            contents=archive_prompt
+                        )
+                        archive_text = archive_response.text
                     
                     year, week_num, _ = target_date.isocalendar()
                     archive_filename = f"{year}-W{week_num:02d}_Summary.md"
-                    archive_content = f"# {year}年 第{week_num}週のまとめ\n\n## AI総括\n{archive_response.text}\n\n## ハイライト\n{memory_text}"
+                    archive_content = f"# {year}年 第{week_num}週のまとめ\n\n## AI総括\n{archive_text}\n\n## ハイライト\n{memory_text}"
                     
                     with open(SAVE_DIR / archive_filename, "w", encoding="utf-8") as f:
                         f.write(archive_content)
