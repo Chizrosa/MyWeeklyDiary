@@ -97,7 +97,7 @@ MyWeeklyDiary/
 ├── prompt_local.txt   # ローカル LLM (Ollama) 用の指示書（モデル特性に合わせて調整済み）
 ├── memory_db.json     # AI 参照用の記憶データベース（過去 7 日分の要約を保持）
 ├── summaries.md       # 【おまけ】人間用の 1 行日記一覧。自動で追記・更新されます
-├── MyWeeklyDiary.bat  # Windows 用の一発起動ショートカット
+├── WeeklyDiary.bat  # Windows 用の一発起動ショートカット
 ├── .env               # API キーや保存先パスの設定（GitHub 非公開）
 └── README.md          # この説明書
 ```
