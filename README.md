@@ -1,6 +1,6 @@
-# MyAutoDiary 🌙🐾
+# MyWeeklyDiary 🌙🐾
 
-ActivityWatchのログとDiscordのつぶやきから、AIが1日の日記を自動生成するローカルWebアプリケーションです。
+ActivityWatch のログと Discord のつぶやきを統合し、AI が 1 日の日記を自動生成するプライバシー重視型の日記作成ツールです。
 
 ## 特徴
 
@@ -9,12 +9,17 @@ ActivityWatchのログとDiscordのつぶやきから、AIが1日の日記を自
 * **プライバシー保護**: 特定アプリやメアドを自動で匿名化。さらに、AIへ送信する前に画面上でログを直接手動で編集・削除できます。
 * **AI自動執筆**: ログと天候データを統合し、Geminiが自然な一人称の日記を作成。
 * **夜更かし対応**: 午前3時までの活動は「前日の日記」として扱います。
+* **1週間の記憶（週次アーカイブ）**: 今日までの過去 7 日分の日記要約を「記憶」として AI が参照します。 これにより、「昨日の続きの作業」や「数日前から考えていたこと」など、日々の文脈を汲み取った深みのある日記を生成できます。また、毎週日曜日、1週間を振り返る総括レポートを自動生成。週の進捗や感情の変化を俯瞰できます。
+* **選べるAIエンジン**: 日記生成にローカルLLMモデルを使うか、APIを使うか選べます。
+
 
 ## 技術スタック
 * **Language**: Python 3.14+
 * **Package Manager**: [uv](https://github.com/astral-sh/uv) 
 * **Web UI**: [Streamlit](https://streamlit.io/) 
-* **AI Engine**: [Gemini API](https://aistudio.google.com/)
+* **AI Engine**:
+    * [Gemini API](https://aistudio.google.com/)
+    * [Local: Ollama](https://ollama.com/)
 * **Data Sources**:
     * [ActivityWatch](https://activitywatch.net/) (ローカル活動ログ)
     * [Discord API](https://discord.com/developers/docs/intro) (感情/思考ログ)
@@ -22,7 +27,7 @@ ActivityWatchのログとDiscordのつぶやきから、AIが1日の日記を自
 
 ## API料金とプライバシーについて
 * **無料運用が可能**: Gemini API（Google AI Studio）の無料ティアの範囲内で運用可能です（1日の終わりに1回～数回程度の実行を想定）。
-* **プライバシーの注意**: 無料枠のAPIはGoogleの学習に利用される可能性があります。絶対に外部に漏らしたくない機密情報等は、送信前の画面でログから削除してください。
+* **プライバシーの注意**: Google AI Studioの無料枠のAPIはGoogleの学習に利用される可能性があります。Google AI Studioを使う場合は、絶対に外部に漏らしたくない機密情報等は、送信前の画面でログから削除してください。
 
 ## セットアップ
 
@@ -37,13 +42,14 @@ ActivityWatchのログとDiscordのつぶやきから、AIが1日の日記を自
 **【必要なもの】**
 * [uv](https://github.com/astral-sh/uv) (Pythonパッケージマネージャー)
 * [ActivityWatch](https://activitywatch.net/) (ローカルで起動しておく)
-* Gemini APIキー ([Google AI Studio](https://aistudio.google.com/) から取得)
+* [Ollama](ローカルLLMを使用する場合。インストール後、使用するモデルを pull しておく必要があります)
+* *(任意)* Gemini APIキー ([Google AI Studio](https://aistudio.google.com/) から取得。ローカルLLMを使う場合は必要ありません)
 * *(任意)* Discord Botトークン & チャンネルID
 
 **【インストールと設定】**
 ```bash
-git clone https://github.com/chizrosa/MyAutoDiary.git
-cd MyAutoDiary
+git clone https://github.com/Chizrosa/MyWeeklyDiary.git
+cd MyWeeklyDiary
 uv sync
 cp .env.example .env
 ```
@@ -57,7 +63,9 @@ cp .env.example .env
 
 ## 使い方
 
-以下のコマンド（または`MyAutoDiary.bat`の実行）で起動します。
+1. Ollama の起動: ローカルモデルを使う場合は、ollama serve を実行。
+
+2. 以下のコマンド（または`WeeklyDiary.bat`の実行）で起動します。
 ```bash
 uv run streamlit run main.py
 ```
@@ -68,27 +76,29 @@ uv run streamlit run main.py
 <br>
 
 > [!IMPORTANT]
-> **MyAutoDiary.bat を実行して開いた黒い画面（コマンドプロンプト）は、アプリのサーバーです。ブラウザを使っている間は、この画面を閉じないでください。 閉じるとアプリも終了してしまいます**
+> **WeeklyDiary.bat を実行して開いた黒い画面（コマンドプロンプト）は、アプリのサーバーです。ブラウザを使っている間は、この画面を閉じないでください。 閉じるとアプリも終了してしまいます**
 
 1. 日付を選び **「データを集計」** をクリック。
 2. プレビューを確認し、AIに見られたくないログがあればここで直接削除・修正します。
 3. **「付け加えたいこと」** の入力欄に、ログには残っていないその日の出来事や感情があればメモします（※ここに書いた内容もAIに送信され、日記に反映されます）。
-4. **「AIに日記を書いてもらう」** で日記を生成。
-5. **「ファイルに保存する」** でMarkdown形式で保存されます。
-   * *(保存されたファイルの上部には「AI日記」、下部にはAIに送らなかったデータも含めた「生ログ全件」がローカル専用の記録として残ります)*
+4. AI モデルの選択 (サイドバー):高性能な gemini-... モデルか、プライバシー重視の local-... (Ollama) モデルか、その時の気分で選択できます。
+5. **「AIに日記を書いてもらう」** で日記を生成。このとき、AI は自動的に過去 7 日間の日記要約（記憶）を読み込みます。 これにより、「昨日から続いている作業」などの文脈を反映した執筆が行われます。
+6. **「ファイルに保存する」** でMarkdown形式で保存されます。
+   * (ファイル下部には、AI に送らなかったデータも含めた「生ログ全件」がローカル専用の記録として残ります)
+   * 保存された日記は memory_db.json に蓄積され、明日以降の日記生成に活用されます。
 
 ## 📁 フォルダ構成
 
 ```text
-MyAutoDiary/
-├── assets/            # スクリーンショットなどの静的ファイルを格納
-│   └── screenshots/   # README表示用の画像を保存
-├── main.py            # メインの実行プログラム（AIモデルの指定やフィルター設定）
-├── ui_parts.py        # 画面のUI（見た目）を構成するファイル
-├── prompt.txt         # AIへの指示書（プロンプト・日記のトーン等をここで調整）
-├── MyAutoDiary.bat    # Windows用の一発起動ショートカット
-├── .env.example       # 環境変数のひな形（コピーして .env を作成します）
-├── pyproject.toml     # パッケージの構成情報
+MyWeeklyDiary/
+├── main.py            # メインプログラム（AI モデルの切り替えや集計ロジック）
+├── ui_parts.py        # 画面の UI コンポーネント（ログ編集エリアなど）
+├── prompt.txt         # Gemini API 用の指示書
+├── prompt_local.txt   # ローカル LLM (Ollama) 用の指示書（モデル特性に合わせて調整済み）
+├── memory_db.json     # AI 参照用の記憶データベース（過去 7 日分の要約を保持）
+├── summaries.md       # 【おまけ】人間用の 1 行日記一覧。自動で追記・更新されます
+├── MyWeeklyDiary.bat  # Windows 用の一発起動ショートカット
+├── .env               # API キーや保存先パスの設定（GitHub 非公開）
 └── README.md          # この説明書
 ```
 
@@ -98,10 +108,16 @@ MyAutoDiary/
 
 * **プロンプトの変更 (`prompt.txt`)**: 
   AIの口調、日記の文字数、重視してほしいポイントを変えたい場合は、このテキストファイルを編集してください。
+    * prompt.txt: Gemini API 用。
+    * prompt_local.txt: ローカル LLM 用。 モデル（Llama や Gemma）の特性に合わせて、より詳細な指示を書き込むことができます。
 * **使用するAIモデルの変更 (`main.py`)**: 
-  コード内のモデル指定部分（例: `gemini-1.5-flash` 等）を書き換えることで任意のモデルに変更できます。
+  MODEL_OPTIONS リストを書き換えることで、サイドバーの選択肢を増やせます。
+    * Gemini API: gemini-2.5-flash などの公式モデル名を記述します。
+    * Local LLM: Ollama にインストールしたモデル名の冒頭に local- を付けて記述します（例: local-llama3.1:latest）。
 * **プライバシーフィルターの育成 (`main.py`)**: 
   「このアプリ名も匿名化したい」「このキーワードは無視してほしい」という場合は、コード内のフィルター用リストや条件に単語を書き足すことで、自分専用にフィルターをカスタマイズしてください。
+* **ローカルモデルの安定化 (`main.py`)**:
+  お使いの PC スペックに合わせて、num_ctx（コンテキスト長）や num_gpu（GPU レイヤー数）などのパラメータを微調整することで、生成速度や安定性を最適化できます。
 
 ## 拡張例・応用例
 
