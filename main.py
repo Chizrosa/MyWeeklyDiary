@@ -16,6 +16,30 @@ from dotenv import load_dotenv
 # --- 0. 設定と定数 ---
 load_dotenv()
 
+# (check_env関数などはそのまま)
+
+# モデルの選択肢を増やす
+MODEL_OPTIONS = [
+    "gemini-1.5-flash", 
+    "gemini-1.5-pro",
+    "local-gemma3:latest", # プレフィックス「local-」で判定
+    "local-llama3:latest"
+]
+
+GEMINI_MODEL = st.sidebar.selectbox("🤖 AIモデルを選択", MODEL_OPTIONS)
+
+# モデルに応じて読み込むプロンプトを自動切り替え
+if GEMINI_MODEL.startswith("local-"):
+    prompt_file = "prompt_local.txt"
+    # 万が一ファイルがない時のためのフォールバック
+    if not os.path.exists(prompt_file):
+        prompt_file = "prompt.txt"
+else:
+    prompt_file = "prompt.txt"
+
+with open(prompt_file, "r", encoding="utf-8") as f:
+    prompt_template = f.read()
+
 # 門番（セットアップチェック）
 def check_env():
     # 1. ActivityWatchの起動確認
@@ -202,14 +226,25 @@ target_date = st.sidebar.date_input("📅 日記の日付", value=logical_now)
 tab1, tab2 = st.tabs(["📝 今日を書く", "📚 過去を振り返る"])
 
 with tab1:
-    if st.sidebar.button("✨ データを集計"):
-        with st.spinner("集計中..."):
+    # main.py のサイドバー部分（日付選択の下あたり）
+    if st.sidebar.button("✨ データを集計", key="collect_data_btn"):
+        with st.spinner("最新データを取得中..."):
+            # 各種データの取得
             aw_result = get_aw_summary(target_date)
+            new_dc = get_discord_messages(target_date)
+            new_weather = get_weather(target_date)
+
+            # 1. 表示用のステート保存
             st.session_state.aw_ai = aw_result["ai"]
             st.session_state.aw_local = aw_result["local"]
-            st.session_state.dc = get_discord_messages(target_date)
-            st.session_state.weather = get_weather(target_date)
+            st.session_state.dc = new_dc
+            st.session_state.weather = new_weather
             st.session_state.is_collected = True
+
+            # 2. 【ここが重要】編集用テキストエリアのStateに直接流し込む
+            # これで、再集計した時にテキストエリアの中身も即座に最新になる
+            st.session_state["edit_aw_logs"] = aw_result["ai"]
+            st.session_state["edit_dc_logs"] = new_dc
 
     weather_data = st.session_state.get("weather", "（未取得）")
     aw_show = st.session_state.get("aw_local", "（未取得）")
@@ -219,15 +254,14 @@ with tab1:
     memo = st.text_area("✍️ 付け加えたいこと", placeholder="今日あったことや、AIに伝えたいことを書いてください。", height=150)
 
     if st.session_state.get("is_collected"):
-        edited_logs = ui_parts.render_review_area(
-            target_date, weather_data, st.session_state.get("aw_ai", "（未取得）"), dc_data
+        edited_aw, edited_dc = ui_parts.render_review_area(
+            st.session_state.get("aw_ai", "（未取得）"), dc_data
         )
 
         if st.button("🌟 AIに日記を書いてもらう"):
             with st.spinner("AIが執筆中..."):
-                prompt_path = pathlib.Path(__file__).parent / "prompt.txt"
                 try:
-                    with open(prompt_path, "r", encoding="utf-8") as f:
+                    with open(prompt_file, "r", encoding="utf-8") as f:
                         instruction = f.read()
                     
                     weekdays = ["月", "火", "水", "木", "金", "土", "日"]
@@ -241,40 +275,65 @@ with tab1:
                     memory_lines = [f"{d}: {memory_db[d]}" for d in last_7_dates]
                     memory_text = "\n".join(memory_lines) if memory_lines else "過去の記録はまだありません。"
                     
+# 編集後のログを format に渡す
                     full_prompt = instruction.format(
                         target_date=perfect_date,
                         weather_data=weather_data,
-                        aw_data=edited_logs,
-                        dc_data=dc_data,
+                        aw_data=edited_aw,  # 手動編集したAWログ
+                        dc_data=edited_dc,  # 手動編集したDiscordログ
                         memo=memo,
                         weekly_memory=memory_text
                     )
 
-                    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-                    
-                    # 1. メイン日記の生成
-                    response = client.models.generate_content(
-                        model=GEMINI_MODEL,
-                        contents=full_prompt
-                    )
-                    st.session_state.result = response.text
+                    # --- モデルに応じて処理を分岐 ---
+                    if GEMINI_MODEL.startswith("local-"):
+                        import ollama  # ローカルモデル用にインポート
+                        local_model_name = GEMINI_MODEL.replace("local-", "") # プレフィックスを外す
+                        
+                        # 1. メイン日記の生成 (ローカル)
+                        response = ollama.generate(
+                            model=local_model_name,
+                            prompt=full_prompt,
+                            options={"temperature": 0.1, "stop": ["---"], "num_predict": 1500}
+                        )
+                        st.session_state.result = response["response"]
 
-                    # 2. 今日のハイライトを1行で抽出（事実ベースに改善）
-                    summary_prompt = f"""
+                        # 2. 今日のハイライトを1行で抽出 (ローカル)
+                        summary_prompt = f"以下は今日の日記です。...（中略）...\n\n{st.session_state.result}"
+                        summary_response = ollama.generate(
+                            model=local_model_name,
+                            prompt=summary_prompt,
+                            options={"temperature": 0.1, "num_predict": 100}
+                        )
+                        summary_text = summary_response["response"].strip()
+
+                    else:
+                        # 1. メイン日記の生成 (Gemini API)
+                        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+                        response = client.models.generate_content(
+                            model=GEMINI_MODEL,
+                            contents=full_prompt
+                        )
+                        st.session_state.result = response.text
+
+                        # 2. 今日のハイライトを1行で抽出（事実ベースに改善）
+                        summary_prompt = f"""
 以下は今日の日記です。この日の「主要な活動」と「体調や気分の変化」を、
 事実ベースで簡潔に1行（50文字以内）で記録してください。
 ※「明日は〜する」という予定よりも、「今日は〜だった」という事実を優先してください。
 ※「おなかいたい」等の日常的なつぶやきは、深刻な体調不良ではなく等身大で表現してください。
 
-{response.text}
+{st.session_state.result}
 """
-                    summary_response = client.models.generate_content(
-                        model=GEMINI_MODEL,
-                        contents=summary_prompt
-                    )
+                        summary_response = client.models.generate_content(
+                            model=GEMINI_MODEL,
+                            contents=summary_prompt
+                        )
+                        summary_text = summary_response.text.strip()
                     
+                    # --- 記憶の保存処理 ---
                     date_key = target_date.isoformat()
-                    memory_db[date_key] = summary_response.text.strip()
+                    memory_db[date_key] = summary_text
                     save_memory(memory_db)
                     update_oneline_md(memory_db)
 

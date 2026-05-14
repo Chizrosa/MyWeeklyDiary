@@ -1,36 +1,35 @@
 import streamlit as st
 
-# --- 0. アプリ全体のスタイル設定 ---
+# --- 0. アプリ全体のスタイル設定（ダークパープル・Stitch完全再現版） ---
 def apply_global_style():
-    """
-    ダークパープルの近未来的なテーマを適用します。
-    """
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         
-        /* 全体の背景とテキスト */
+        /* 1. 全体の背景とテキスト */
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             font-family: 'Inter', sans-serif;
             background-color: #191121 !important;
             color: #f1f5f9;
         }
 
-        /* サイドバー */
+        /* 2. サイドバー（左フレーム）の徹底強化 */
         [data-testid="stSidebar"] {
             background-color: #120b18 !important;
             border-right: 1px solid rgba(153, 71, 235, 0.15);
+            padding-top: 2rem;
         }
         
-        /* サイドバー内のラベル */
+        /* サイドバー内のウィジェットのラベル */
         [data-testid="stSidebar"] label {
             color: #9947eb !important;
             font-size: 0.75rem !important;
             font-weight: 700 !important;
             letter-spacing: 0.1em;
+            margin-bottom: 8px;
         }
 
-        /* 共通ボタンデザイン */
+        /* 3. ボタン（集計ボタンなど）のデザイン */
         .stButton > button {
             background: linear-gradient(135deg, #9947eb 0%, #7e22ce 100%) !important;
             color: white !important;
@@ -47,7 +46,7 @@ def apply_global_style():
             box-shadow: 0 6px 20px rgba(153, 71, 235, 0.5);
         }
 
-        /* 入力エリア */
+        /* 4. 日付入力やテキストエリアの装飾 */
         .stDateInput div[data-baseweb="input"], .stTextArea textarea {
             background-color: #0f172a !important;
             color: #e2e8f0 !important;
@@ -55,15 +54,26 @@ def apply_global_style():
             border-radius: 0.8rem !important;
         }
 
-        /* カスタムスクロールバー */
+        /* 5. 通知系ボックス */
+        div[data-testid="stNotification"] {
+            background-color: rgba(42, 31, 61, 0.6) !important;
+            border: 1px solid rgba(153, 71, 235, 0.3) !important;
+            color: #f1f5f9 !important;
+            border-radius: 1rem !important;
+        }
+        
+        /* スクロールバー */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: rgba(153, 71, 235, 0.05); }
         ::-webkit-scrollbar-thumb { background: rgba(153, 71, 235, 0.3); border-radius: 10px; }
         </style>
     """, unsafe_allow_html=True)
 
-# --- 1. サイドバー・ステータス ---
+# --- 1. サイドバー（左フレーム）の装飾 ---
 def render_sidebar_status(logical_date):
+    """
+    サイドバーの最上部に表示するステータス
+    """
     st.sidebar.markdown(f"""
         <div style="margin-bottom: 25px; padding: 10px; border-bottom: 1px solid rgba(153, 71, 235, 0.15);">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
@@ -76,14 +86,14 @@ def render_sidebar_status(logical_date):
                     <span style="color: #4ade80; font-weight: 700;">● ONLINE</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 11px;">
-                    <span style="color: #94a3b8;">LOGICAL DATE</span>
-                    <span style="color: #b794f4;">{logical_date}</span>
+                    <span style="color: #94a3b8;">RESET</span>
+                    <span style="color: #b794f4;">03:00 AM</span>
                 </div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-# --- 2. メインヘッダー ---
+# --- 2. メインヘッダー表示 ---
 def render_header(logical_date):
     st.markdown(f"""
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 30px;">
@@ -92,74 +102,100 @@ def render_header(logical_date):
         </div>
     """, unsafe_allow_html=True)
 
-# --- 3. 取得データ表示 ---
+# --- 3. ステータス情報の表示（2段レイアウト） ---
 def display_status_info(target_date, weather, aw_show, dc):
-    col1, col2 = st.columns([1, 2])
-    card_style = "background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; height: 200px; box-sizing: border-box;"
+    row1_col1, row1_col2 = st.columns([1, 2])
+    row1_height = "180px"
     
-    with col1:
+    with row1_col1:
         st.markdown(f"""
-            <div style="{card_style}">
+            <div style="background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; height: {row1_height}; box-sizing: border-box;">
                 <div style="margin-bottom: 15px;">
-                    <label style="color: #9947eb; font-size: 0.7rem; font-weight: 700;">📅 DATE</label>
-                    <div style="font-weight: 600; font-size: 1.1rem; color: #f1f5f9;">{target_date}</div>
+                    <label>📅 DATE</label>
+                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{target_date}</div>
                 </div>
                 <div>
-                    <label style="color: #9947eb; font-size: 0.7rem; font-weight: 700;">☀️ WEATHER</label>
-                    <div style="font-weight: 600; font-size: 1.1rem; color: #f1f5f9;">{weather}</div>
+                    <label>☀️ WEATHER</label>
+                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{weather}</div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-    with col2:
-        # 改行をHTMLタグに変換
-        dc_html = dc.replace('\n', '<br>')
+    with row1_col2:
         st.markdown(f"""
-            <div style="{card_style}">
+            <div style="background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; height: {row1_height}; box-sizing: border-box;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <label style="color: #9947eb; font-size: 0.7rem; font-weight: 700;">💬 Discord Log</label>
+                    <label>💬 Discord Activity Log</label>
+                    <span style="background: #9947eb; color: white; padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: bold;">本日</span>
                 </div>
-                <div style="font-size: 0.8rem; color: #e2e8f0; line-height: 1.5; height: 110px; overflow-y: auto;">
-                    {dc_html}
+                <div style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.6; height: 100px; overflow-y: auto;">
+                    {dc.replace('\n', '<br>')}
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-    # Activity Watchログ（下段）
-    aw_html = aw_show.replace('\n', '<br>')
     st.markdown(f"""
-        <div style="background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; margin-top: 20px;">
-            <label style="color: #9947eb; font-size: 0.7rem; font-weight: 700; display: block; margin-bottom: 10px;">📊 Activity Watch (Detailed Log)</label>
-            <div style="font-size: 0.8rem; color: #e2e8f0; line-height: 1.6; max-height: 200px; overflow-y: auto;">
-                {aw_html}
+        <div style="background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; margin-top: 20px; min-height: 150px; box-sizing: border-box;">
+            <div style="margin-bottom: 10px;">
+                <label>📊 Activity Watch (Detailed Log)</label>
+            </div>
+            <div style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.8; max-height: 250px; overflow-y: auto;">
+                {aw_show.replace('\n', '<br>')}
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-# --- 4. 日記のプレビュー ---
+# --- 4. 送信前チェックエリア ---
+# ui_parts.py の render_review_area
+def render_review_area(aw_ai, dc):
+    # PC活動ログ
+    st.markdown("ActivityWatchログ (編集可)")
+    # value=aw_ai をあえて書かず、session_state経由で表示させる
+    edited_aw = st.text_area(
+        label="aw_editor",
+        # value は書かない（keyがある場合、session_stateの値が優先される）
+        height=200,
+        label_visibility="collapsed",
+        key="edit_aw_logs"
+    )
+
+    # Discordログ
+    st.markdown("Discordログ (編集可)")
+    edited_dc = st.text_area(
+        label="dc_editor",
+        height=200,
+        label_visibility="collapsed",
+        key="edit_dc_logs"
+    )
+    
+    return edited_aw, edited_dc
+
+# --- 5. 日記の表示スタイル ---
 def render_diary(content, target_date):
-    # 本文の改行処理
-    body_html = content.replace('\n', '<br>')
     st.markdown(f"""
         <div style="
             background-color: #ffffff; 
-            padding: 35px; 
+            padding: 30px; 
             border-radius: 1.5rem; 
             margin: 30px 0;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
             color: #1e293b;
         ">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px;">
-                <h1 style="font-size: 1.4rem; font-weight: 700; color: #0f172a; margin: 0;">{target_date} の記録</h1>
-                <div style="font-size: 24px;">📝</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px;">
+                <div>
+                    <!-- ここを target_date を使った固定タイトルに変更 -->
+                    <h1 style="font-size: 1.3rem; font-weight: 700; color: #0f172a; margin: 0;">{target_date} の日記</h1>
+                </div>
+                <div style="font-size: 24px;">🐾</div>
             </div>
-            <div style="line-height: 1.9; font-size: 1.05rem; color: #334155; font-family: 'Inter', sans-serif;">
-                {body_html}
+            <div style="line-height: 1.8; font-size: 1rem; color: #334155;">
+                <!-- 本文はそのまま全て表示 -->
+                {content.replace('\n', '<br>')}
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-# --- 5. エフェクト ---
+# --- 6. ネコちゃん ---
 def cat_run():
     st.markdown("""
         <style>
@@ -168,15 +204,9 @@ def cat_run():
             100% { left: 110%; transform: scaleX(-1); }
         }
         .running-cat {
-            position: fixed; bottom: 50px; font-size: 60px; z-index: 10000;
-            animation: cat-dash 2s ease-in-out forwards; pointer-events: none;
+            position: fixed; bottom: 80px; font-size: 50px; z-index: 9999;
+            animation: cat-dash 2.5s ease-in-out forwards; pointer-events: none;
         }
         </style>
-        <div class="running-cat">🐈💨</div>
+        <div class="running-cat">🐈✨</div>
     """, unsafe_allow_html=True)
-
-# ユーティリティ（送信前チェックエリアはStreamlit標準パーツを使うため整理）
-def render_review_area(target_date, weather, aw_ai, dc):
-    st.markdown("<br><label style='color: #9947eb; font-weight:700;'>📂 AI Submission Preview</label>", unsafe_allow_html=True)
-    review_text = f"【日付】: {target_date}\n【天気】: {weather}\n\n【活動ログ】:\n{aw_ai}\n\n【Discord】:\n{dc}"
-    return st.text_area("内容の最終確認（編集可）", value=review_text, height=300, label_visibility="collapsed")
