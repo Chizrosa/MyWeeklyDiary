@@ -28,6 +28,7 @@ ActivityWatch のログと Discord のつぶやきを統合し、AI が 1 日の
 ## API料金とプライバシーについて
 * **無料運用が可能**: Gemini API（Google AI Studio）の無料ティアの範囲内で運用可能です（1日の終わりに1回～数回程度の実行を想定）。
 * **プライバシーの注意**: Google AI Studioの無料枠のAPIはGoogleの学習に利用される可能性があります。Google AI Studioを使う場合は、絶対に外部に漏らしたくない機密情報等は、送信前の画面でログから削除してください。
+* **人名の扱い**: ウィンドウのタイトル（ファイル名など）やDiscordのつぶやきに含まれる人名も、そのままAIに送信されます。Gemini APIを使う場合は、名字やフルネームではなく、あだ名や下の名前で書く習慣をおすすめします。特に珍しい名字は、それだけで本人の特定につながることがあります。気になる場合は、送信前の画面で書き換えるか、ローカルLLMを選んでください。
 
 ## セットアップ
 
@@ -42,8 +43,8 @@ ActivityWatch のログと Discord のつぶやきを統合し、AI が 1 日の
 **【必要なもの】**
 * [uv](https://github.com/astral-sh/uv) (Pythonパッケージマネージャー)
 * [ActivityWatch](https://activitywatch.net/) (ローカルで起動しておく)
-* [Ollama](ローカルLLMを使用する場合。インストール後、使用するモデルを pull しておく必要があります)
-* *(任意)* Gemini APIキー ([Google AI Studio](https://aistudio.google.com/) から取得。ローカルLLMを使う場合は必要ありません)
+* [Ollama](https://ollama.com/) (ローカルLLMを使用する場合。インストール後、使用するモデルを pull しておく必要があります。例: `ollama pull gemma4`)
+* *(任意)* Gemini APIキー ([Google AI Studio](https://aistudio.google.com/) から取得。ローカルLLMだけを使う場合は必要ありません)
 * *(任意)* Discord Botトークン & チャンネルID
 
 **【インストールと設定】**
@@ -55,11 +56,15 @@ cp .env.example .env
 ```
 作成された `.env` ファイルに、取得したAPIキー等を設定してください。（※`.env`は絶対に公開しないでください）
 
+天気の取得場所 `CITY_NAME` と、1日の区切りに使うタイムゾーン `TIMEZONE` も、お住まいの地域に合わせて設定してください（例: `CITY_NAME=Siracusa` / `TIMEZONE=Europe/Rome`）。未設定の場合は東京の天気・UTC時刻で集計されます。
+
 **Discord連携を行う場合 (任意)**
 1. [Developer Portal](https://discord.com/developers/applications) でBotを作成しトークンを取得。
 2. Botを自分用の非公開サーバーに招待。
 3. Discordの「詳細設定 ＞ 開発者モード」をオンにし、対象チャンネルを右クリックしてIDをコピー。
-4. `.env` にトークンとIDを追記します。
+4. `.env` の `DISCORD_TOKEN` と `DISCORD_CHANNEL_ID` にトークンとIDを追記します。
+
+※ 指定した日のメッセージだけを、その日の午前3時から順に取得します（1日あたり最大1000件まで）。
 
 ## 使い方
 
@@ -96,7 +101,7 @@ MyWeeklyDiary/
 ├── prompt.txt         # Gemini API 用の指示書
 ├── prompt_local.txt   # ローカル LLM (Ollama) 用の指示書（モデル特性に合わせて調整済み）
 ├── memory_db.json     # AI 参照用の記憶データベース（過去 7 日分の要約を保持）
-├── summaries.md       # 【おまけ】人間用の 1 行日記一覧。自動で追記・更新されます
+├── 1行日記まとめ.md    # 【おまけ】人間用の 1 行日記一覧。保存先フォルダに自動で作成・更新されます
 ├── WeeklyDiary.bat  # Windows 用の一発起動ショートカット
 ├── .env               # API キーや保存先パスの設定（GitHub 非公開）
 └── README.md          # この説明書
@@ -112,10 +117,11 @@ MyWeeklyDiary/
     * prompt_local.txt: ローカル LLM 用。 モデル（Llama や Gemma）の特性に合わせて、より詳細な指示を書き込むことができます。
 * **使用するAIモデルの変更 (`main.py`)**: 
   MODEL_OPTIONS リストを書き換えることで、サイドバーの選択肢を増やせます。
-    * Gemini API: gemini-2.5-flash などの公式モデル名を記述します。
-    * Local LLM: Ollama にインストールしたモデル名の冒頭に local- を付けて記述します（例: local-llama3.1:latest）。
+    * Gemini API: gemini-3.8-flash などの公式モデル名を記述します（終了予定のモデルは [Gemini deprecations](https://ai.google.dev/gemini-api/docs/deprecations) で確認できます）。
+    * Local LLM: Ollama にインストールしたモデル名の冒頭に local- を付けて記述します（例: local-gemma4:latest）。
 * **プライバシーフィルターの育成 (`main.py`)**: 
   「このアプリ名も匿名化したい」「このキーワードは無視してほしい」という場合は、コード内のフィルター用リストや条件に単語を書き足すことで、自分専用にフィルターをカスタマイズしてください。
+  伏せ字のラベル（`SENSITIVE_APPS` の右側の言葉）は、自分の状況に合わせて書き換えると日記の精度が上がります。例えば講師としてTeamsで授業をしている場合は `"ms-teams.exe": "オンラインレッスン（講師として）"` のようにすると、中身は隠したまま、AIに必要な文脈だけを伝えられます。
 * **ローカルモデルの安定化 (`main.py`)**:
   お使いの PC スペックに合わせて、num_ctx（コンテキスト長）や num_gpu（GPU レイヤー数）などのパラメータを微調整することで、生成速度や安定性を最適化できます。
 

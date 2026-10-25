@@ -1,4 +1,10 @@
+import html
 import streamlit as st
+
+
+def _to_html(text):
+    """ログやAIの文章をHTMLとして安全に表示できる形にする（タグを無効化して改行を<br>に）"""
+    return html.escape(str(text)).replace('\n', '<br>')
 
 # --- 0. アプリ全体のスタイル設定（ダークパープル・Stitch完全再現版） ---
 def apply_global_style():
@@ -112,11 +118,11 @@ def display_status_info(target_date, weather, aw_show, dc):
             <div style="background: rgba(42, 31, 61, 0.4); border: 1px solid rgba(153, 71, 235, 0.2); padding: 20px; border-radius: 1.5rem; height: {row1_height}; box-sizing: border-box;">
                 <div style="margin-bottom: 15px;">
                     <label>📅 DATE</label>
-                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{target_date}</div>
+                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{_to_html(target_date)}</div>
                 </div>
                 <div>
                     <label>☀️ WEATHER</label>
-                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{weather}</div>
+                    <div style="font-weight: 600; font-size: 1.1rem; margin-top: 4px; color: #f1f5f9;">{_to_html(weather)}</div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -129,7 +135,7 @@ def display_status_info(target_date, weather, aw_show, dc):
                     <span style="background: #9947eb; color: white; padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: bold;">本日</span>
                 </div>
                 <div style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.6; height: 100px; overflow-y: auto;">
-                    {dc.replace('\n', '<br>')}
+                    {_to_html(dc)}
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -140,7 +146,7 @@ def display_status_info(target_date, weather, aw_show, dc):
                 <label>📊 Activity Watch (Detailed Log)</label>
             </div>
             <div style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.8; max-height: 250px; overflow-y: auto;">
-                {aw_show.replace('\n', '<br>')}
+                {_to_html(aw_show)}
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -190,7 +196,7 @@ def render_diary(content, target_date):
             </div>
             <div style="line-height: 1.8; font-size: 1rem; color: #334155;">
                 <!-- 本文はそのまま全て表示 -->
-                {content.replace('\n', '<br>')}
+                {_to_html(content)}
             </div>
         </div>
     """, unsafe_allow_html=True)
