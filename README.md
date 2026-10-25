@@ -150,3 +150,4 @@ MyWeeklyDiary/
 ## ライセンス / 開発について
 * This project is licensed under the MIT License.
 * コードの大部分は、AIアシスタント（Gemini）とのペアプログラミングによって作成されました。
+* 2026年10月の見直し（モデルの更新、天気・Discordの取得の改善、プロンプトの調整など）は、[Claude](https://claude.com/)（Anthropic）と一緒に行いました。
