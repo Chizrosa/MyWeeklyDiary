@@ -64,6 +64,8 @@ DEFAULT_SAVE_PATH = os.getenv("SAVE_DIR", "./diaries")
 SAVE_DIR = pathlib.Path(DEFAULT_SAVE_PATH)
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 ONELINE_FILENAME = "1行日記まとめ.md"
+WEEKLY_SUMMARY_DIR = SAVE_DIR / "Weekly_Summary"  # 日曜日に作る週まとめの保存先
+WEEKDAYS_JA = "月火水木金土日"
 
 # 詳細を秘匿したいアプリの設定
 SENSITIVE_APPS = {
@@ -411,6 +413,50 @@ def split_diary_and_summary(text):
     summary_lines = [line.strip() for line in m.group(2).strip().splitlines() if line.strip()]
     return diary, (summary_lines[0] if summary_lines else "")
 
+# --- 「これまでの記録」タブ用の関数 ---
+
+def get_diary_files():
+    """日記フォルダ直下の「YYYY-MM-DD.md」を {日付: パス} で返す（1行日記まとめ等は除外）"""
+    diaries = {}
+    for f in SAVE_DIR.glob("*.md"):
+        try:
+            diaries[date.fromisoformat(f.stem)] = f
+        except ValueError:
+            continue
+    return diaries
+
+def get_summary_files():
+    """Weekly_Summary の「YYYY-Www_Summary.md」を (年, 週, パス) の古い順リストで返す"""
+    summaries = []
+    if WEEKLY_SUMMARY_DIR.exists():
+        for f in WEEKLY_SUMMARY_DIR.glob("*_Summary.md"):
+            m = re.fullmatch(r"(\d{4})-W(\d{2})_Summary", f.stem)
+            if m:
+                summaries.append((int(m[1]), int(m[2]), f))
+    return sorted(summaries)
+
+def week_label(year, week_num):
+    """週の表示名（例: 2026年 第46週（11/09〜11/15））"""
+    monday = date.fromisocalendar(year, week_num, 1)
+    sunday = date.fromisocalendar(year, week_num, 7)
+    return f"{year}年 第{week_num}週（{monday:%m/%d}〜{sunday:%m/%d}）"
+
+def move_diary(step, dates):
+    """前後ボタン用：日記のない日は飛ばして、前（または次）の日記の日付に移る"""
+    cur = st.session_state.hist_date
+    if step < 0:
+        candidates = [d for d in dates if d < cur]
+        if candidates:
+            st.session_state.hist_date = candidates[-1]
+    else:
+        candidates = [d for d in dates if d > cur]
+        if candidates:
+            st.session_state.hist_date = candidates[0]
+
+def move_week(step):
+    """前後ボタン用：週まとめを1週ずつ移る"""
+    st.session_state.hist_week_idx += step
+
 # --- 2. 画面構成 ---
 st.set_page_config(page_title="My Auto Diary", page_icon="🌙", layout="centered")
 ui_parts.apply_global_style()
@@ -543,11 +589,11 @@ with tab1:
             gen_time_note = (f"（生成時間: {format_duration(st.session_state.gen_seconds)}）"
                              if "gen_seconds" in st.session_state else "")
 
-            # content構成：日記本文、モデル署名、詳細ログ、メモ
+            # content構成：日記本文、当日のメモ、モデル署名、詳細ログ
             content = f"""# {target_date}
 
 {st.session_state.result}
-
+{memo_block}
 ---
 ### 🤖 使用モデル
 `{st.session_state.get("gen_model", GEMINI_MODEL)}`{gen_time_note}
@@ -559,7 +605,7 @@ with tab1:
 ```text
 {dc_data}
 ```
-{memo_block}"""
+"""
             # ファイル書き込み
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -581,20 +627,78 @@ with tab1:
                     archive_filename = f"{year}-W{week_num:02d}_Summary.md"
                     archive_content = f"# {year}年 第{week_num}週のまとめ\n\n## AI総括\n{archive_text}\n\n## ハイライト\n{memory_text}"
 
-                    with open(SAVE_DIR / archive_filename, "w", encoding="utf-8") as f:
+                    WEEKLY_SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(WEEKLY_SUMMARY_DIR / archive_filename, "w", encoding="utf-8") as f:
                         f.write(archive_content)
                     st.success("🎊 週次アーカイブを保存しました！")
 
 with tab2:
     st.subheader("これまでの記録")
-    if SAVE_DIR.exists():
-        files = sorted(SAVE_DIR.glob("*.md"), reverse=True)
-        # 1行日記まとめファイルは選択肢から除外
-        files = [f for f in files if f.name != ONELINE_FILENAME]
-        if files:
-            selected_file = st.selectbox("読む日記を選んでください", files, format_func=lambda x: x.stem)
-            with open(selected_file, "r", encoding="utf-8") as f:
-                st.markdown("---")
-                st.markdown(f.read())
-        else:
+    # 日記内のコードブロック（ログ・メモ）が横に伸びないよう、右端で折り返す
+    st.markdown("""<style>
+    [data-testid="stMarkdownContainer"] pre,
+    [data-testid="stMarkdownContainer"] pre code {
+        white-space: pre-wrap !important;
+        overflow-wrap: anywhere !important;
+    }
+    </style>""", unsafe_allow_html=True)
+    view = st.radio("表示", ["📔 日記", "📅 週まとめ"], horizontal=True,
+                    label_visibility="collapsed", key="hist_view")
+
+    if view == "📔 日記":
+        diaries = get_diary_files()
+        if not diaries:
             st.write("まだ日記がありません。")
+        else:
+            dates = sorted(diaries)
+            # 初めて開いたとき・範囲外のときは、いちばん新しい日記にする
+            if "hist_date" not in st.session_state or not (dates[0] <= st.session_state.hist_date <= dates[-1]):
+                st.session_state.hist_date = dates[-1]
+            cur = st.session_state.hist_date
+
+            col_prev, col_cal, col_next = st.columns([1, 2, 1], vertical_alignment="bottom")
+            with col_prev:
+                st.button("← 前の日記", on_click=move_diary, args=(-1, dates),
+                          disabled=cur <= dates[0], width="stretch", key="hist_prev_day")
+            with col_cal:
+                st.date_input("日付を選ぶ", min_value=dates[0], max_value=dates[-1],
+                              format="YYYY/MM/DD", label_visibility="collapsed", key="hist_date")
+            with col_next:
+                st.button("次の日記 →", on_click=move_diary, args=(1, dates),
+                          disabled=cur >= dates[-1], width="stretch", key="hist_next_day")
+
+            cur = st.session_state.hist_date
+            st.markdown("---")
+            st.markdown(f"#### {cur.isoformat()}（{WEEKDAYS_JA[cur.weekday()]}）")
+            if cur in diaries:
+                with open(diaries[cur], "r", encoding="utf-8") as f:
+                    st.markdown(f.read())
+            else:
+                st.info("この日の日記はありません。")
+
+    else:
+        summaries = get_summary_files()
+        if not summaries:
+            st.write("まだ週まとめがありません。")
+        else:
+            last = len(summaries) - 1
+            # 初めて開いたとき・範囲外のときは、いちばん新しい週にする
+            if "hist_week_idx" not in st.session_state or not (0 <= st.session_state.hist_week_idx <= last):
+                st.session_state.hist_week_idx = last
+            idx = st.session_state.hist_week_idx
+
+            col_prev, col_sel, col_next = st.columns([1, 2, 1], vertical_alignment="bottom")
+            with col_prev:
+                st.button("← 前の週", on_click=move_week, args=(-1,),
+                          disabled=idx <= 0, width="stretch", key="hist_prev_week")
+            with col_sel:
+                st.selectbox("週を選ぶ", list(range(len(summaries))),
+                             format_func=lambda i: week_label(summaries[i][0], summaries[i][1]),
+                             label_visibility="collapsed", key="hist_week_idx")
+            with col_next:
+                st.button("次の週 →", on_click=move_week, args=(1,),
+                          disabled=idx >= last, width="stretch", key="hist_next_week")
+
+            st.markdown("---")
+            with open(summaries[st.session_state.hist_week_idx][2], "r", encoding="utf-8") as f:
+                st.markdown(f.read())
